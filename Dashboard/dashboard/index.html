@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nora | Live Triage Console</title>
+<style>
+:root{font-family:Inter,system-ui,Arial,sans-serif;color:#e9efff;background:#0c1424}*{box-sizing:border-box}
+body{max-width:1100px;margin:0 auto;padding:30px 20px}header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}h1{margin:0;font-size:29px}p{color:#9facbf}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:24px 0}.card{background:#162338;border:1px solid #304158;border-radius:14px;padding:18px}.k{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:#9facbf}.v{font-size:22px;font-weight:700;margin-top:10px;overflow-wrap:anywhere}.wide{grid-column:span 3}#feed{max-height:340px;overflow:auto}.entry{border-bottom:1px solid #34455b;padding:12px 0}.entry small{color:#99a9c0}.badge{padding:8px 12px;border-radius:30px;background:#34435b;font-size:13px}.emergency{color:#ff9898}.caution{color:#ffd48b}.neutral{color:#a6d9f6}button{background:#304a70;color:white;border:0;border-radius:8px;padding:8px 12px;cursor:pointer}select{background:#18283e;color:white;border:1px solid #4a607e;border-radius:7px;padding:7px} @media(max-width:650px){.grid{grid-template-columns:1fr}.wide{grid-column:span 1}}
+</style></head><body>
+<header><div><h1>Nora <span style="font-weight:400;color:#8b9cb4">/ Live Case Console</span></h1><p>Fictional veterinary call-routing demo — not medical advice</p></div><span id="connection" class="badge">Connecting…</span></header>
+<div class="grid">
+<section class="card"><div class="k">Active case</div><div id="case" class="v">—</div></section>
+<section class="card"><div class="k">Assessment</div><div id="label" class="v neutral">Waiting</div></section>
+<section class="card"><div class="k">Case revision</div><div id="revision" class="v">0</div></section>
+<section class="card wide"><div class="k">Rule / explanation</div><div id="reason" class="v" style="font-size:17px">No assessment yet</div><p id="next">Updates appear when the agent calls the tools.</p></section>
+<section class="card wide"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div class="k">Live events (sanitized)</div><div><label for="filter">Case </label><select id="filter"><option value="">All cases</option></select> <button id="clear">Clear view</button></div></div><div id="feed" aria-live="polite"></div></section>
+</div>
+<script>
+const $=id=>document.getElementById(id), events=[], known=new Set(); let selected='';
+function safeString(v){return String(v??'—')}
+function render(){const filtered=events.filter(e=>!selected||e.case_id===selected);const last=filtered.at(-1);const assessment=[...filtered].reverse().find(e=>e.type==='assessment');
+$('case').textContent=last?.case_id||'—';$('revision').textContent=last?.payload?.revision??'0';
+const label=assessment?.payload?.label||'Waiting';$('label').textContent=label;$('label').className='v '+(label==='EMERGENCY'?'emergency':label==='CONTACT_VET_NOW'?'caution':'neutral');
+$('reason').textContent=assessment?.payload?.reason||'No assessment yet';$('next').textContent=assessment?.payload?.next_step||'Updates appear when the agent calls the tools.';
+const feed=$('feed');feed.replaceChildren();[...filtered].reverse().slice(0,50).forEach(e=>{const d=document.createElement('div');d.className='entry';const name=document.createElement('strong');name.textContent=e.type.replaceAll('_',' ');const meta=document.createElement('small');meta.textContent=' · '+new Date(e.timestamp).toLocaleTimeString()+' · '+e.case_id;const info=document.createElement('div');info.textContent=e.type==='case_updated'?`Updated ${safeString(e.payload?.field)} · revision ${safeString(e.payload?.revision)}`:e.type==='assessment'?`Rule ${safeString(e.payload?.rule_id)} · ${safeString(e.payload?.label)}`:e.type==='mock_alert'?'Mock alert created (NOT delivered)': 'Event';d.append(name,meta,info);feed.append(d)})}
+function add(e){if(!e||typeof e!=='object'||!e.case_id)return;events.push(e);if(events.length>200)events.shift();if(!known.has(e.case_id)){known.add(e.case_id);const option=document.createElement('option');option.value=e.case_id;option.textContent=e.case_id;$('filter').append(option)}render()}
+$('filter').addEventListener('change',e=>{selected=e.target.value;render()});$('clear').addEventListener('click',()=>{events.length=0;render()});
+let retry=1000;function connect(){const scheme=location.protocol==='https:'?'wss':'ws';const ws=new WebSocket(`${scheme}://${location.host}/ws`);ws.onopen=()=>{$('connection').textContent='Live';retry=1000};ws.onmessage=ev=>{try{const msg=JSON.parse(ev.data);if(msg.type==='history')msg.events.forEach(add);else if(msg.type==='event')add(msg.event)}catch(err){console.warn(err)}};ws.onclose=()=>{$('connection').textContent='Disconnected — reconnecting';setTimeout(connect,retry);retry=Math.min(10000,retry*2)};ws.onerror=()=>ws.close()}connect();
+</script></body></html>
